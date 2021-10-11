@@ -1,3 +1,6 @@
+# Hello G2C2 Gangs
+This is a our code repo that is forked from the [official FTC repo](https://github.com/FIRST-Tech-Challenge/FtcRobotController). Future commits at orgin will be merged while our edit will not be affected. 
+
 ## NOTICE
 
 This repository contains the public FTC SDK for the Freight Frenzy (2021-2022) competition season.
