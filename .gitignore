@@ -1,3 +1,4 @@
 *
 !.gitignore
-!.TeamCode
+!gradle
+!TeamCode
