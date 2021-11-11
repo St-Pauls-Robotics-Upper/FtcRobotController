@@ -1,5 +1,5 @@
-*
-/*/
-!.gitignore
-!gradle
-!/TeamCode/*
+.gradle
+.idea
+local.properties
+FtcRobotController/build/*
+TeamCode/build/*
