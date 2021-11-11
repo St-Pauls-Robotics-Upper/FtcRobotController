@@ -1,4 +1,4 @@
 *
 !.gitignore
 !gradle
-!TeamCode/src/main/java/org/firstinspires/ftc/teamcode
+!TeamCode/src/main/java/org/firstinspires/ftc/teamcode/BasicOpMode_Linear.java
