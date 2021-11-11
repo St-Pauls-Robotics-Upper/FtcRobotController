@@ -1,4 +1,4 @@
 *
 !.gitignore
 !gradle
-!TeamCode\*
+!TeamCode/src/main/java/org/firstinspires/ftc/teamcode
