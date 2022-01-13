@@ -29,10 +29,20 @@
 
 package org.firstinspires.ftc.teamcode;
 
+import com.arcrobotics.ftclib.controller.PIDController;
+import com.arcrobotics.ftclib.controller.PIDFController;
+import com.arcrobotics.ftclib.hardware.ServoEx;
+import com.arcrobotics.ftclib.hardware.motors.Motor;
+import com.arcrobotics.ftclib.hardware.motors.MotorEx;
+import com.qualcomm.hardware.rev.RevTouchSensor;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.Servo;
+import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
+
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
 @TeleOp(name="Basic: Linear OpMode", group="Linear Opmode")
 public class BasicOpMode_Linear extends LinearOpMode {
@@ -40,48 +50,111 @@ public class BasicOpMode_Linear extends LinearOpMode {
     // Declare OpMode members.
     private ElapsedTime runtime = new ElapsedTime();
 
-    //initialize motors
+    //create devices
     private DcMotor flMotor = null;
     private DcMotor frMotor = null;
     private DcMotor blMotor = null;
     private DcMotor brMotor = null;
 
+    private MotorEx toddMotor = null;
+    private MotorEx bobMotor = null;
+
+    private Servo sinServo = null;
+
+    private RevTouchSensor ctSensor = null;
+
     @Override
     public void runOpMode() {
-
-
-        // Initialize the hardware variables. Note that the strings used here as parameters
-        // to 'get' must correspond to the names assigned during the robot configuration
-        // step (using the FTC Robot Controller app on the phone).
+        //initialize devices
         flMotor = hardwareMap.get(DcMotor.class, "flMotor");
         frMotor = hardwareMap.get(DcMotor.class, "frMotor");
         blMotor = hardwareMap.get(DcMotor.class, "blMotor");
         brMotor = hardwareMap.get(DcMotor.class, "brMotor");
 
+        bobMotor  = new MotorEx(hardwareMap, "Bob");
+        toddMotor = new MotorEx(hardwareMap, "Todd");
 
-        // Most robots need the motor on one side to be reversed to drive forward
-        // Reverse the motor that runs backwards when connected directly to the battery
+        sinServo = hardwareMap.get(Servo.class, "sins");
+
+        ctSensor = hardwareMap.get(RevTouchSensor.class, "CTS");
+
+
+        PIDFController bobPID  = new PIDFController(15.0, 0.02, 0.01, 0.1);
+        PIDFController toddPID = new PIDFController(15.0, 0.02, 0.005, 0.1);
+
+        //set motor direction
         flMotor.setDirection(DcMotor.Direction.FORWARD);
         frMotor.setDirection(DcMotor.Direction.REVERSE);
         blMotor.setDirection(DcMotor.Direction.FORWARD);
         brMotor.setDirection(DcMotor.Direction.REVERSE);
 
-        // Wait for the game to start (driver presses PLAY)
+        //set servo default position
+        sinServo.setPosition(1);
+
+        //wait to start
         waitForStart();
         runtime.reset();
 
-        // run until the end of the match (driver presses STOP)
+        //setup for bob
+        double bobAccu = 0;
+        bobMotor.resetEncoder();
+        bobPID.reset();
+        //setup for todd
+        double toddAccu = 0;
+        toddMotor.resetEncoder();
+        toddPID.reset();
+        double stopPosition = 0;
+        boolean isStopping = false;
+
+        //main runloop
         while (opModeIsActive()) {
 
-            double drive = -gamepad1.left_stick_y;
-            double turn  =  gamepad1.left_stick_x;
-            double hdrive = gamepad1.right_stick_x;
+            boolean currentIsStopping = ctSensor.isPressed();
+            if (currentIsStopping && !isStopping) {
+                stopPosition = toddMotor.getCurrentPosition();
+            }
+            isStopping = currentIsStopping;
 
+            //control for bob
+//            double bobDt = bobPID.getPeriod();
+            bobAccu += -gamepad2.left_stick_y * 15;
+            bobAccu = Math.min(0, bobAccu);
+
+            bobPID.setSetPoint(bobAccu);
+
+            double bobCurrentPos = bobMotor.getCurrentPosition();
+            double bobPower = bobPID.calculate(bobCurrentPos);
+            bobMotor.setVelocity(bobPower);
+
+            //control for todd
+//            double toddDt = toddPID.getPeriod();
+            toddAccu += gamepad2.right_stick_y * 25;
+            if (isStopping) {
+                toddAccu = Math.max(stopPosition, toddAccu);
+            }
+
+            toddPID.setSetPoint(toddAccu);
+
+            double toddCurrentPos = toddMotor.getCurrentPosition();
+            double toddPower = toddPID.calculate(toddCurrentPos);
+            toddMotor.setVelocity(toddPower);
+
+            //control for sins
+            double amountOfSin = gamepad2.right_trigger;
+            sinServo.setPosition(amountOfSin);
+
+            //obtain driver parameter
+            double drive = -gamepad1.left_stick_y;
+            double turn  =  gamepad1.right_stick_x;
+            double hdrive = gamepad1.left_stick_x;
+
+            //compute motor power
             double flPower = drive + turn - hdrive;
             double frPower = drive - turn + hdrive;
             double blPower = drive + turn + hdrive;
             double brPower = drive - turn - hdrive;
 
+            //set motor power
             flMotor.setPower(flPower);
             frMotor.setPower(frPower);
             blMotor.setPower(blPower);
