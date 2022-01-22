@@ -1,32 +1,3 @@
-/* Copyright (c) 2017 FIRST. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without modification,
- * are permitted (subject to the limitations in the disclaimer below) provided that
- * the following conditions are met:
- *
- * Redistributions of source code must retain the above copyright notice, this list
- * of conditions and the following disclaimer.
- *
- * Redistributions in binary form must reproduce the above copyright notice, this
- * list of conditions and the following disclaimer in the documentation and/or
- * other materials provided with the distribution.
- *
- * Neither the name of FIRST nor the names of its contributors may be used to endorse or
- * promote products derived from this software without specific prior written permission.
- *
- * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY THIS
- * LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
 package org.firstinspires.ftc.teamcode;
 
 import com.arcrobotics.ftclib.controller.PIDController;
@@ -37,6 +8,7 @@ import com.arcrobotics.ftclib.hardware.motors.MotorEx;
 import com.qualcomm.hardware.rev.RevTouchSensor;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.hardware.TouchSensor;
@@ -51,42 +23,56 @@ public class BasicOpMode_Linear extends LinearOpMode {
     private ElapsedTime runtime = new ElapsedTime();
 
     //create devices
-    private DcMotor flMotor = null;
-    private DcMotor frMotor = null;
-    private DcMotor blMotor = null;
-    private DcMotor brMotor = null;
+    private MotorEx flMotor = null;
+    private MotorEx frMotor = null;
+    private MotorEx blMotor = null;
+    private MotorEx brMotor = null;
+
+    PIDFController flPID  = new PIDFController(7.0, 50, 0.1, 0.1);
+    PIDFController frPID  = new PIDFController(7.0, 50, 0.1, 0.1);
+    PIDFController blPID  = new PIDFController(7.0, 50, 0.1, 0.1);
+    PIDFController brPID  = new PIDFController(7.0, 50, 0.1, 0.1);
 
     private MotorEx toddMotor = null;
     private MotorEx bobMotor = null;
 
     private Servo sinServo = null;
+    private CRServo holyServo = null;
+    private CRServo susanServo = null;
 
     private RevTouchSensor ctSensor = null;
 
     @Override
     public void runOpMode() {
         //initialize devices
-        flMotor = hardwareMap.get(DcMotor.class, "flMotor");
-        frMotor = hardwareMap.get(DcMotor.class, "frMotor");
-        blMotor = hardwareMap.get(DcMotor.class, "blMotor");
-        brMotor = hardwareMap.get(DcMotor.class, "brMotor");
+        flMotor = new MotorEx(hardwareMap, "flMotor");
+        frMotor = new MotorEx(hardwareMap, "frMotor");
+        blMotor = new MotorEx(hardwareMap, "blMotor");
+        brMotor = new MotorEx(hardwareMap, "brMotor");
 
         bobMotor  = new MotorEx(hardwareMap, "Bob");
         toddMotor = new MotorEx(hardwareMap, "Todd");
 
         sinServo = hardwareMap.get(Servo.class, "sins");
+        holyServo = hardwareMap.get(CRServo.class, "holy");
+
+        susanServo = hardwareMap.get(CRServo.class, "susan");
 
         ctSensor = hardwareMap.get(RevTouchSensor.class, "CTS");
 
-
-        PIDFController bobPID  = new PIDFController(15.0, 0.02, 0.01, 0.1);
-        PIDFController toddPID = new PIDFController(15.0, 0.02, 0.005, 0.1);
+        PIDFController bobPID  = new PIDFController(15.0, 100, 0.02, 0.1);
+        PIDFController toddPID = new PIDFController(10.0, 50, 0.01, 0.1);
 
         //set motor direction
-        flMotor.setDirection(DcMotor.Direction.FORWARD);
-        frMotor.setDirection(DcMotor.Direction.REVERSE);
-        blMotor.setDirection(DcMotor.Direction.FORWARD);
-        brMotor.setDirection(DcMotor.Direction.REVERSE);
+        frMotor.setInverted(true);
+        brMotor.setInverted(true);
+
+        //drives
+        boolean lastIsSlowMode = false;
+        flPID.reset();
+        frPID.reset();
+        blPID.reset();
+        brPID.reset();
 
         //set servo default position
         sinServo.setPosition(1);
@@ -99,6 +85,7 @@ public class BasicOpMode_Linear extends LinearOpMode {
         double bobAccu = 0;
         bobMotor.resetEncoder();
         bobPID.reset();
+
         //setup for todd
         double toddAccu = 0;
         toddMotor.resetEncoder();
@@ -107,7 +94,12 @@ public class BasicOpMode_Linear extends LinearOpMode {
         boolean isStopping = false;
 
         //main runloop
+        double lastTimeMeasure = runtime.seconds();
+
         while (opModeIsActive()) {
+            double currentTime = runtime.seconds();
+            double deltaT = currentTime - lastTimeMeasure;
+            lastTimeMeasure = currentTime;
 
             boolean currentIsStopping = ctSensor.isPressed();
             if (currentIsStopping && !isStopping) {
@@ -115,10 +107,25 @@ public class BasicOpMode_Linear extends LinearOpMode {
             }
             isStopping = currentIsStopping;
 
-            //control for bob
+            //get roughly how far todd have extended
+            double roughExtensionFactor = toddMotor.getCurrentPosition() * 0.00025;
+
+            //control for bob -----------------------------
 //            double bobDt = bobPID.getPeriod();
-            bobAccu += -gamepad2.left_stick_y * 15;
-            bobAccu = Math.min(0, bobAccu);
+            double bobSpeed = 800 * (1 - roughExtensionFactor * 0.5);
+            bobAccu += gamepad2.left_stick_y * 600 * deltaT;
+//            bobAccu = Math.min(0, bobAccu);
+
+            telemetry.addData("Bob Delta", bobMotor.getCurrentPosition() - bobAccu);
+            telemetry.addData("Bob Position", bobMotor.getCurrentPosition());
+
+            double bobAllowedError = 200;
+            if (bobMotor.getCurrentPosition() > bobAccu + bobAllowedError) {
+                bobAccu = bobMotor.getCurrentPosition() - bobAllowedError;
+            }
+            if (bobMotor.getCurrentPosition() < bobAccu - bobAllowedError) {
+                bobAccu = bobMotor.getCurrentPosition() + bobAllowedError;
+            }
 
             bobPID.setSetPoint(bobAccu);
 
@@ -126,11 +133,25 @@ public class BasicOpMode_Linear extends LinearOpMode {
             double bobPower = bobPID.calculate(bobCurrentPos);
             bobMotor.setVelocity(bobPower);
 
-            //control for todd
+            //control for todd -----------------------------
 //            double toddDt = toddPID.getPeriod();
-            toddAccu += gamepad2.right_stick_y * 25;
+
+            toddAccu += -gamepad2.right_stick_y * 1000 * deltaT;
+
+            telemetry.addData("Todd Delta", toddMotor.getCurrentPosition() - toddAccu);
+            telemetry.addData("Todd Position", toddMotor.getCurrentPosition());
+
+            double toddAllowedError = 150;
+            if (toddMotor.getCurrentPosition() > toddAccu + toddAllowedError) {
+                toddAccu = toddMotor.getCurrentPosition() - toddAllowedError;
+            }
+            if (toddMotor.getCurrentPosition() < toddAccu - toddAllowedError) {
+                toddAccu = toddMotor.getCurrentPosition() + toddAllowedError;
+            }
+
             if (isStopping) {
                 toddAccu = Math.max(stopPosition, toddAccu);
+                stopPosition = toddMotor.getCurrentPosition();
             }
 
             toddPID.setSetPoint(toddAccu);
@@ -140,25 +161,62 @@ public class BasicOpMode_Linear extends LinearOpMode {
             toddMotor.setVelocity(toddPower);
 
             //control for sins
-            double amountOfSin = gamepad2.right_trigger;
+            double amountOfSin = 1 - gamepad2.right_trigger * 0.5;
             sinServo.setPosition(amountOfSin);
 
+            //control for holy
+            holyServo.setPower(gamepad2.left_bumper ? 1 : -gamepad2.left_trigger);
+
+            //susan
+            susanServo.setPower(gamepad2.dpad_left ? -1 : gamepad2.dpad_right ? 1 : 0);
+
             //obtain driver parameter
+            boolean isInSlowMo = gamepad1.left_bumper || gamepad1.right_bumper;
+            if (!lastIsSlowMode && isInSlowMo) { //entering slow mode
+                flPID.setSetPoint(flMotor.getCurrentPosition());
+                frPID.setSetPoint(frMotor.getCurrentPosition());
+                blPID.setSetPoint(blMotor.getCurrentPosition());
+                brPID.setSetPoint(brMotor.getCurrentPosition());
+
+                flPID.reset();
+                frPID.reset();
+                blPID.reset();
+                brPID.reset();
+            }
+
+            lastIsSlowMode = isInSlowMo;
+
+            double driver2turn = Math.abs(gamepad2.right_stick_x) > 0.2 ? gamepad2.right_stick_x : 0;
             double drive = -gamepad1.left_stick_y;
-            double turn  =  gamepad1.right_stick_x;
-            double hdrive = gamepad1.left_stick_x;
+            double turn  = gamepad1.right_stick_x + 0.3 * gamepad2.right_stick_x;
+            double stray = gamepad1.left_stick_x;
 
             //compute motor power
-            double flPower = drive + turn - hdrive;
-            double frPower = drive - turn + hdrive;
-            double blPower = drive + turn + hdrive;
-            double brPower = drive - turn - hdrive;
+            double flPower = drive + turn + stray;
+            double frPower = drive - turn - stray;
+            double blPower = drive + turn - stray;
+            double brPower = drive - turn + stray;
 
             //set motor power
-            flMotor.setPower(flPower);
-            frMotor.setPower(frPower);
-            blMotor.setPower(blPower);
-            brMotor.setPower(brPower);
+            if (isInSlowMo && lastIsSlowMode) {
+                double speed = 600 * deltaT;
+                flPID.setSetPoint(flPID.getSetPoint() + speed * flPower);
+                frPID.setSetPoint(frPID.getSetPoint() + speed * frPower);
+                blPID.setSetPoint(blPID.getSetPoint() + speed * blPower);
+                brPID.setSetPoint(brPID.getSetPoint() + speed * brPower);
+
+                flMotor.setVelocity(flPID.calculate(flMotor.getCurrentPosition()));
+                frMotor.setVelocity(frPID.calculate(frMotor.getCurrentPosition()));
+                blMotor.setVelocity(blPID.calculate(blMotor.getCurrentPosition()));
+                brMotor.setVelocity(brPID.calculate(brMotor.getCurrentPosition()));
+            } else {
+                flMotor.set(flPower);
+                frMotor.set(frPower);
+                blMotor.set(blPower);
+                brMotor.set(brPower);
+            }
+
+            telemetry.update();
         }
     }
 }

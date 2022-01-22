@@ -3,3 +3,6 @@
 local.properties
 FtcRobotController/build/*
 TeamCode/build/*
+java_pid45607.hprof
+java_pid47096.hprof
+*.hprof
