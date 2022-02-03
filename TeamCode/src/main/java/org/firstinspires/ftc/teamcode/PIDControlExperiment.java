@@ -12,6 +12,7 @@ import com.arcrobotics.ftclib.kinematics.wpilibkinematics.MecanumDriveKinematics
 import com.arcrobotics.ftclib.kinematics.wpilibkinematics.MecanumDriveWheelSpeeds;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -25,32 +26,36 @@ public class PIDControlExperiment extends LinearOpMode {
     //drive motors
     private MotorEx aMotor = null;
     private PIDFController aPIDController = null;
-    private double aMotorDesiredPosition = 0;
+    private double aMotorDesiredTickPosition = 0;
 
     //ran when pressed run
     @Override public void runOpMode() {
         aMotor = new MotorEx(hardwareMap, "flMotor", 537.6, 340);
         aMotor.setRunMode(MotorEx.RunMode.RawPower);
-        aPIDController = new PIDFController(15.0, 0.02, 0.01, 0.1);
+        aPIDController = new PIDFController(0.0005, 1, 0.0001, 1/3046.4); //100 divide by max tick per second
 
         waitForStart();
 
         double lastElapsedTime = runtime.seconds();
         while (opModeIsActive()) {
             double currentTime = runtime.seconds();
-            double deltaT = currentTime - currentTime;
+            double deltaT = currentTime - lastElapsedTime;
             lastElapsedTime = currentTime;
 
+
+
+            //PID thing
             final double pi = 3.1415;
             double gamepadInput = gamepad1.left_stick_y;
-            double speedMPS = gamepadInput * 1.6;
-            double velocity = speedMPS / 1.6;
-//            aMotorDesiredPosition += velocity * deltaT;
-            aMotor.set(velocity);
+            double speedRPS = gamepadInput;
+            double speedTPS = speedRPS * 537.6;
+            aMotorDesiredTickPosition += speedTPS * deltaT;
+            double calculatedPower = aPIDController.calculate(aMotor.getCurrentPosition() - aMotorDesiredTickPosition);
+            aMotor.set(calculatedPower);
 
             telemetry.addData("Gamepad Input", gamepadInput);
-            telemetry.addData("Motor Velocity", speedMPS);
-            telemetry.addData("Motor True Velocity", aMotor.getVelocity() * 0.000558);
+            telemetry.addData("Desired TPS", speedTPS);
+            telemetry.addData("Motor True TPS", aMotor.getCorrectedVelocity());
             telemetry.addData("Position", aMotor.getCurrentPosition());
             telemetry.update();
         }

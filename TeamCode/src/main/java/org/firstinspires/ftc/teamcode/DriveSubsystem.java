@@ -1,87 +1,132 @@
 package org.firstinspires.ftc.teamcode;
 
-import com.arcrobotics.ftclib.controller.PIDController;
 import com.arcrobotics.ftclib.controller.PIDFController;
+import com.arcrobotics.ftclib.geometry.Pose2d;
 import com.arcrobotics.ftclib.geometry.Rotation2d;
-import com.arcrobotics.ftclib.geometry.Translation2d;
 import com.arcrobotics.ftclib.hardware.GyroEx;
 import com.arcrobotics.ftclib.hardware.RevIMU;
 import com.arcrobotics.ftclib.hardware.motors.Motor;
 import com.arcrobotics.ftclib.hardware.motors.MotorEx;
 import com.arcrobotics.ftclib.kinematics.wpilibkinematics.ChassisSpeeds;
-import com.arcrobotics.ftclib.kinematics.wpilibkinematics.MecanumDriveKinematics;
-import com.arcrobotics.ftclib.kinematics.wpilibkinematics.MecanumDriveWheelSpeeds;
+import com.arcrobotics.ftclib.kinematics.wpilibkinematics.DifferentialDriveKinematics;
+import com.arcrobotics.ftclib.kinematics.wpilibkinematics.DifferentialDriveOdometry;
+import com.arcrobotics.ftclib.kinematics.wpilibkinematics.DifferentialDriveWheelSpeeds;
+import com.arcrobotics.ftclib.util.MathUtils;
 import com.qualcomm.robotcore.hardware.HardwareMap;
-
-import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 
 public class DriveSubsystem {
 
     //Drive Motor and IMU
-    private MotorEx flMotor = null;
-    private MotorEx frMotor = null;
-    private MotorEx blMotor = null;
-    private MotorEx brMotor = null;
-    private GyroEx gyroscope = null;
+    public MotorEx flMotor = null;
+    public MotorEx frMotor = null;
+    public MotorEx blMotor = null;
+    public MotorEx brMotor = null;
+    public GyroEx gyroscope = null;
 
-    // Locations of the wheels relative to the robot center.
-    final private Translation2d flWheelPos = new Translation2d(0.12, 0.15);
-    final private Translation2d frWheelPos = new Translation2d(0.12, -0.15);
-    final private Translation2d blWheelPos = new Translation2d(-0.12, 0.15);
-    final private Translation2d brWheelPos = new Translation2d(-0.12, -0.15);
+    //Drive pid
+    private PIDFCoefficients bmf = new PIDFCoefficients(0.01, 0.005, 0, 1/3046.4);
+    private PIDFController flPID = new PIDFController(bmf.p, bmf.i, bmf.d, bmf.f);
+    private PIDFController frPID = new PIDFController(bmf.p, bmf.i, bmf.d, bmf.f);
+    private PIDFController blPID = new PIDFController(bmf.p, bmf.i, bmf.d, bmf.f);
+    private PIDFController brPID = new PIDFController(bmf.p, bmf.i, bmf.d, bmf.f);
 
-    //Kinematics
-    private MecanumDriveKinematics driveKinematics = new MecanumDriveKinematics(
-            flWheelPos, frWheelPos,
-            blWheelPos, brWheelPos
-    );
+    private double flDesirTicPos = 0;
+    private double frDesirTicPos = 0;
+    private double blDesirTicPos = 0;
+    private double brDesirTicPos = 0;
+
+
+    final double trackWidth = 22;
+
+    private DifferentialDriveKinematics driveKinematics = new DifferentialDriveKinematics(trackWidth);
+
+    //Odometry
+    DifferentialDriveOdometry odometry = new DifferentialDriveOdometry(new Rotation2d(), new Pose2d(0,0, new Rotation2d()));
 
     //Chassis & Wheel speed objects
-    private ChassisSpeeds driveChassisSpeed = new ChassisSpeeds(0, 0, 0);
-    private MecanumDriveWheelSpeeds driveWheelSpeeds = new MecanumDriveWheelSpeeds();
+    private ChassisSpeeds targetChassisSpeed = new ChassisSpeeds(0, 0, 0);
+    private DifferentialDriveWheelSpeeds targetWheelSpeeds = new DifferentialDriveWheelSpeeds();
+
+    boolean usePID = false;
+    boolean slow = false;
+
+    final double d2m = 0.0008726;
+    final double c2m = 0.00058437;
 
     //drive functions
-    private void genericDrive() {
-        driveWheelSpeeds = driveKinematics.toWheelSpeeds(driveChassisSpeed);
+    private void genericDrive(double deltaT) {
+        targetWheelSpeeds = driveKinematics.toWheelSpeeds(targetChassisSpeed);
 
-        double fl = driveWheelSpeeds.frontLeftMetersPerSecond;
-        double fr = driveWheelSpeeds.frontRightMetersPerSecond;
-        double bl = driveWheelSpeeds.rearLeftMetersPerSecond;
-        double br = driveWheelSpeeds.rearRightMetersPerSecond;
+        double lft = targetWheelSpeeds.leftMetersPerSecond;
+        double rit = targetWheelSpeeds.rightMetersPerSecond;
 
         //wheel radius = 0.047m
         //wheel circumfrance = 0.295
         //  m/s -> rad/s = 2pi/c = 21.29
-        final double velocityMultiplyer = 21.29;
+        final double circumf = 0.295;
+        final double velocityMultiplyer = 1711; //1760 tick / meter
+        final double maxMPS = 1.78;
 
-        flMotor.setVelocity(fl * velocityMultiplyer, AngleUnit.RADIANS);
-        frMotor.setVelocity(fr * velocityMultiplyer, AngleUnit.RADIANS);
-        blMotor.setVelocity(bl * velocityMultiplyer, AngleUnit.RADIANS);
-        brMotor.setVelocity(br * velocityMultiplyer, AngleUnit.RADIANS);
+        if (usePID) {
+            flDesirTicPos += velocityMultiplyer * lft * deltaT;
+            frDesirTicPos += velocityMultiplyer * rit * deltaT;
+            blDesirTicPos += velocityMultiplyer * lft * deltaT;
+            brDesirTicPos += velocityMultiplyer * rit * deltaT;
+
+            flMotor.set(flPID.calculate(flMotor.getCurrentPosition() - flDesirTicPos));
+            frMotor.set(frPID.calculate(frMotor.getCurrentPosition() - frDesirTicPos));
+            blMotor.set(blPID.calculate(blMotor.getCurrentPosition() - blDesirTicPos));
+            brMotor.set(brPID.calculate(brMotor.getCurrentPosition() - brDesirTicPos));
+        } else {
+            flMotor.set(lft / maxMPS);
+            frMotor.set(rit / maxMPS);
+            blMotor.set(lft / maxMPS);
+            brMotor.set(rit / maxMPS);
+        }
     }
 
     //Drive Functions
-    public void driveUsingChassisVectors(double vxMetersPerSecond, double vyMetersPerSecond, double omegaRadiansPerSecond) {
-        driveChassisSpeed = new ChassisSpeeds(vxMetersPerSecond, vyMetersPerSecond, omegaRadiansPerSecond);
-        genericDrive();
+    public void driveUsingChassisVectors(double deltaT, double vxMPS, double omegaRPS, boolean useSmoothing) {
+
+        if (useSmoothing) {
+            final double multiplyer = d2m;
+            final double leftSpeed  = multiplyer * (flMotor.getCorrectedVelocity() + blMotor.getCorrectedVelocity()) * 0.5;
+            final double rightSpeed = multiplyer * (frMotor.getCorrectedVelocity() + brMotor.getCorrectedVelocity()) * 0.5;
+
+            final DifferentialDriveWheelSpeeds currentWheelSpeeds = new DifferentialDriveWheelSpeeds(leftSpeed, rightSpeed);
+            final ChassisSpeeds currentChassisSpeed = driveKinematics.toChassisSpeeds(currentWheelSpeeds);
+
+            final double currentVx = currentChassisSpeed.vxMetersPerSecond;
+            final double currentVo = currentChassisSpeed.omegaRadiansPerSecond;
+            final double maxVelocity = slow ? 0.3 : 1;
+            final double smoothVxMPS = MathUtils.clamp(vxMPS, MathUtils.clamp(currentVx * 1 - 0.4, -1.0 * maxVelocity, -0.1), MathUtils.clamp(currentVx * 1 + 0.4, 0.1, maxVelocity));
+//            final double smoothVoRPS = MathUtils.clamp(omegaRPS, MathUtils.clamp(currentVo * 1 - 0.5, -1, 0), MathUtils.clamp(currentVo * 1 + 0.5, 0, 1));
+
+            targetChassisSpeed = new ChassisSpeeds(smoothVxMPS, 0, omegaRPS);
+        } else {
+            targetChassisSpeed = new ChassisSpeeds(vxMPS, 0, omegaRPS);
+        }
+
+        genericDrive(deltaT);
     }
 
     private Rotation2d fieldHomeRotation = new Rotation2d();
     public void resetFieldHomeRotation() {
         fieldHomeRotation = gyroscope.getRotation2d();
-        lockedHeading = gyroscope.getHeading();
     }
 
-    public void driveUsingFieldVectors(double vxMetersPerSecond, double vyMetersPerSecond, double omegaRadiansPerSecond) {
-        driveChassisSpeed = ChassisSpeeds.fromFieldRelativeSpeeds(vxMetersPerSecond, vyMetersPerSecond, omegaRadiansPerSecond,
-                gyroscope.getRotation2d().rotateBy(fieldHomeRotation.unaryMinus()));
-        genericDrive();
-    }
+    public void resetEncoders() {
+        flMotor.resetEncoder();
+        frMotor.resetEncoder();
+        blMotor.resetEncoder();
+        brMotor.resetEncoder();
 
-    //rotation holding PID
-    boolean usePidLock = false;
-    PIDFController headingLockPID = new PIDFController(1,0.1,0.1,1);
-    double lockedHeading = 0;
+        flPID.reset();
+        frPID.reset();
+        blPID.reset();
+        brPID.reset();
+    }
 
     /*===============================*/
     /*     Initialize Hardware       */
@@ -96,20 +141,10 @@ public class DriveSubsystem {
         frMotor.setInverted(true);
         brMotor.setInverted(true);
 
-        flMotor.setRunMode(Motor.RunMode.VelocityControl);
-        frMotor.setRunMode(Motor.RunMode.VelocityControl);
-        blMotor.setRunMode(Motor.RunMode.VelocityControl);
-        brMotor.setRunMode(Motor.RunMode.VelocityControl);
-
-        flMotor.setVeloCoefficients(0.02, 0.004, 0.06);
-        frMotor.setVeloCoefficients(0.02, 0.004, 0.06);
-        blMotor.setVeloCoefficients(0.02, 0.004, 0.06);
-        brMotor.setVeloCoefficients(0.02, 0.004, 0.06);
-
-        flMotor.setFeedforwardCoefficients(0, 0, 0);
-        frMotor.setFeedforwardCoefficients(0, 0, 0);
-        blMotor.setFeedforwardCoefficients(0, 0, 0);
-        brMotor.setFeedforwardCoefficients(0, 0, 0);
+        flMotor.setRunMode(Motor.RunMode.RawPower);
+        frMotor.setRunMode(Motor.RunMode.RawPower);
+        blMotor.setRunMode(Motor.RunMode.RawPower);
+        brMotor.setRunMode(Motor.RunMode.RawPower);
 
         //setup imu
         RevIMU imu = new RevIMU(hardwareMap, "imu");
@@ -117,25 +152,23 @@ public class DriveSubsystem {
         imu.reset();
         gyroscope = imu;
 
+        //setup odometry
         resetFieldHomeRotation();
+        resetEncoders();
     }
 
-    public void update(double vx, double vy, double vo) {
-        final double manualRotationFactor = 120;
-        double heading = gyroscope.getHeading();
-        double pidRotationValue = headingLockPID.calculate(heading);
-        double outputRotation = 0;
-        if (Math.abs(vo) < 0.1 && usePidLock) {
-            outputRotation = pidRotationValue;
-        } else {
-            outputRotation = vo * manualRotationFactor;
-            lockedHeading = heading;
-            headingLockPID.reset();
+   /* public void qwqpwp(double love, double love1, double gayscale){
+        for(int i = 0; i < 100; i ++){
+            int yuanda_gay_scale = 0;
+            yuanda_gay_scale ++;
         }
+    }*/
 
-        driveUsingFieldVectors(
-                vx * 1.6,
-                vy * 1.6,
-                outputRotation);
+    public void odometryUpdate(double deltaT) {
+        final double multiplyer = c2m;
+        final double leftPos  = multiplyer * (flMotor.getCurrentPosition() + blMotor.getCurrentPosition()) * 0.5;
+        final double rightPos = multiplyer * (frMotor.getCurrentPosition() + brMotor.getCurrentPosition()) * 0.5;
+
+        odometry.update(gyroscope.getRotation2d(), leftPos, rightPos);
     }
 }

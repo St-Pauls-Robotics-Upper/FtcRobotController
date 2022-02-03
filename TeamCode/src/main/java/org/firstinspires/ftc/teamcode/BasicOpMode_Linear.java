@@ -38,7 +38,7 @@ public class BasicOpMode_Linear extends LinearOpMode {
 
     private Servo sinServo = null;
     private CRServo holyServo = null;
-    private CRServo susanServo = null;
+    private MotorEx jermeetMotor = null;
 
     private RevTouchSensor ctSensor = null;
 
@@ -56,7 +56,7 @@ public class BasicOpMode_Linear extends LinearOpMode {
         sinServo = hardwareMap.get(Servo.class, "sins");
         holyServo = hardwareMap.get(CRServo.class, "holy");
 
-        susanServo = hardwareMap.get(CRServo.class, "susan");
+        jermeetMotor = new MotorEx(hardwareMap, "jermeet");
 
         ctSensor = hardwareMap.get(RevTouchSensor.class, "CTS");
 
@@ -161,14 +161,14 @@ public class BasicOpMode_Linear extends LinearOpMode {
             toddMotor.setVelocity(toddPower);
 
             //control for sins
-            double amountOfSin = 1 - gamepad2.right_trigger * 0.5;
+            double amountOfSin = 1 - gamepad2.right_trigger * 1;
             sinServo.setPosition(amountOfSin);
 
             //control for holy
             holyServo.setPower(gamepad2.left_bumper ? 1 : -gamepad2.left_trigger);
 
             //susan
-            susanServo.setPower(gamepad2.dpad_left ? -1 : gamepad2.dpad_right ? 1 : 0);
+            jermeetMotor.set(gamepad2.dpad_left ? -1 : gamepad2.dpad_right ? 1 : 0);
 
             //obtain driver parameter
             boolean isInSlowMo = gamepad1.left_bumper || gamepad1.right_bumper;
@@ -189,13 +189,12 @@ public class BasicOpMode_Linear extends LinearOpMode {
             double driver2turn = Math.abs(gamepad2.right_stick_x) > 0.2 ? gamepad2.right_stick_x : 0;
             double drive = -gamepad1.left_stick_y;
             double turn  = gamepad1.right_stick_x + 0.3 * gamepad2.right_stick_x;
-            double stray = gamepad1.left_stick_x;
 
             //compute motor power
-            double flPower = drive + turn + stray;
-            double frPower = drive - turn - stray;
-            double blPower = drive + turn - stray;
-            double brPower = drive - turn + stray;
+            double flPower = drive + turn;
+            double frPower = drive - turn;
+            double blPower = drive + turn;
+            double brPower = drive - turn;
 
             //set motor power
             if (isInSlowMo && lastIsSlowMode) {
